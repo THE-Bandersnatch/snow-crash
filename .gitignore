@@ -1,0 +1,18 @@
+# ISO file (too large for git)
+SnowCrash.iso
+*.iso
+
+# PDF (if you want to exclude it)
+# snow-crash.subject.pdf
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
