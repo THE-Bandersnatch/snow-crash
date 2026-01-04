@@ -3,67 +3,43 @@
 ## 🎯 Objective
 Find the password to access the `flag00` account.
 
-## 📝 My Notes - How I Solved This
+## My Notes
 
-Okay so this is level00, my first challenge. Connected as `level00` user and... nothing in the home directory. Typical CTF stuff - gotta find clues somewhere else on the system.
+Started level00. Connected as `level00` user - home directory is empty. Need to find the password for `flag00` somewhere on the system.
 
-### First Thoughts - "Where to look?"
-
-I need to access `flag00`, so let me search for files owned by that user. This is usually a good starting point in these challenges.
-
+Searched for files owned by flag00:
 ```bash
 find / -user flag00 2>/dev/null
 ```
 
-*(Note: The `2>/dev/null` part hides all those annoying "Permission denied" errors - learned this the hard way after scrolling through pages of errors on my first CTF)*
+The `2>/dev/null` redirects stderr to hide permission denied errors - makes output way cleaner.
 
-### Found Something Suspicious
+Found `/usr/sbin/john`. That's unusual - it's in a system binary directory but the name "john" reminds me of John the Ripper (password cracker). Could be a hint.
 
-The search found: `/usr/sbin/john`
-
-Hmm, this is weird:
-- It's in `/usr/sbin/` which is for system binaries - not a typical place for a flag file
-- The name "john" is interesting... **John the Ripper** is that famous password cracker tool
-- Might be a hint?
-
-Let me check what's in it:
+Checked the file:
 ```bash
-file /usr/sbin/john   # Check file type - probably just a text file
-cat /usr/sbin/john    # Read it
+file /usr/sbin/john
+cat /usr/sbin/john
 ```
 
-Got this string: `cdiiddwpgswtgt`
+Got: `cdiiddwpgswtgt`
 
-### "This Definitely Looks Encoded"
+This looks encoded. All lowercase letters, no numbers or special chars. Probably a simple substitution cipher. Caesar cipher seems like a good first guess.
 
-So this string is all lowercase letters - no numbers, no special characters, just letters. This screams "simple cipher" to me. Maybe a Caesar cipher? The filename "john" might be a hint that this is related to password/crypto stuff.
-
-My thinking:
-- All letters, no symbols → probably a simple substitution cipher
-- Caesar cipher (ROT cipher) is the most basic one
-- Gotta try different rotation values
-
-### Trying All Rotations
-
-Let me brute force all 25 possible Caesar shifts (ROT1 through ROT25):
-
+Tried all 25 rotations with a simple bash loop:
 ```bash
 for i in {1..25}; do
   echo "ROT$i: $(echo 'cdiiddwpgswtgt' | tr 'a-z' "$(echo {a..z} | tr -d ' ' | cut -c$((i+1))-26)$(echo {a..z} | tr -d ' ' | cut -c1-$i)")"
 done
 ```
 
-*(This command looks messy but basically it shifts the alphabet by i positions and translates the string)*
+ROT11 gave `nottoohardhere` - that's clearly English! "not too hard here" makes sense.
 
-**Bingo! ROT11 gave me:** `nottoohardhere` 
-
-That's clearly English - "not too hard here"! Got it! 
-
-### Getting the Flag
-
+Used it to login:
 ```bash
-su flag00           # Password: nottoohardhere
-getflag             # Get the token
+su flag00
+# Password: nottoohardhere
+getflag
 ```
 
 ## ✅ Solution
@@ -71,21 +47,15 @@ getflag             # Get the token
 - **Decoded password (ROT11):** `nottoohardhere`
 - **Token:** `x24ti5gi3x0ol2eh4esiuxias`
 
-## 📚 Concepts to Learn
+## Key Takeaways
 
-### 1. File Ownership and Permissions
-Every file in Linux has an owner. Using `find -user` helps locate files belonging to specific users - a critical reconnaissance technique.
+**File ownership and find:** Using `find -user` is a basic recon technique to locate files belonging to specific users. Simple but effective.
 
-### 2. Caesar Cipher (ROT-N)
-A substitution cipher where each letter is shifted by N positions. ROT13 is most common, but any rotation is possible. Named after Julius Caesar who used it for military messages.
+**Caesar cipher (ROT-N):** Each letter is shifted by N positions in the alphabet. ROT13 is common, but any rotation works. Formula: `encrypted[i] = (original[i] + N) mod 26`. Easy to brute force since there are only 25 possible rotations.
 
-**Formula:** `encrypted[i] = (original[i] + N) mod 26`
+**Security through obscurity doesn't work:** Simple encoding like this isn't encryption. Anyone who recognizes the pattern can decode it. Real security needs proper crypto.
 
-### 3. Security Through Obscurity ≠ Security
-Hiding data using simple encoding is NOT encryption. Anyone who recognizes the pattern can decode it. Real security requires proper cryptographic algorithms.
-
-### 4. Contextual Clues
-The filename "john" was a hint toward password cracking. Always pay attention to naming conventions - developers often leave breadcrumbs.
+**Context clues matter:** The filename "john" was a hint pointing to password/crypto stuff. Pay attention to naming - sometimes developers leave hints.
 
 ## 🔧 Tools Used
 - `find` - File search utility
